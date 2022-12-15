@@ -61,7 +61,7 @@ def main():
             prev_hour, curr_hour = row["prev_retrain_hour"], row["curr_retrain_hour"]
             delay_prev_hour, delay_curr_hour = prev_hour - delay * TIME_INTERVAL, curr_hour - delay * TIME_INTERVAL
 
-            if delay_prev_hour < 0 and (curr_hour + TIME_INTERVAL) < defs.MAX_TIME:
+            if delay_prev_hour < 0 or (curr_hour + TIME_INTERVAL) >= defs.MAX_TIME:
                 continue
 
             desired_metrics_before_training = metrics[delay_prev_hour // TIME_INTERVAL]
