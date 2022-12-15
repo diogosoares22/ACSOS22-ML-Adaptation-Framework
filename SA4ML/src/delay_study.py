@@ -95,9 +95,9 @@ def main():
 
             results = dataset[(dataset["prev_retrain_hour"] == delay_prev_hour) & (dataset["curr_retrain_hour"] == delay_curr_hour)]
 
-            dataset.at[index,'delayed-TPR-{}'.format(delay)] = results["curr-TPR"][0]
-            dataset.at[index,'delayed-TNR-{}'.format(delay)] = results["curr-TNR"][0]
-            dataset.at[index,'delayed_fraud_rate-{}'.format(delay)] = results["curr_fraud_rate"][0]
+            dataset.at[index,'delayed-TPR-{}'.format(delay)] = results["curr-TPR"].to_list()[0]
+            dataset.at[index,'delayed-TNR-{}'.format(delay)] = results["curr-TNR"].to_list()[0]
+            dataset.at[index,'delayed_fraud_rate-{}'.format(delay)] = results["curr_fraud_rate"].to_list()[0]
         
         print(
             f"\n        [L] Delay {delay}"
