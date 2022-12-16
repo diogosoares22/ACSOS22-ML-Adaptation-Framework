@@ -155,15 +155,10 @@ def main():
 
             # All chunks of data between delay_prev and delay_curr
 
-            all_val_labels = []
-            all_val_scores = []
-            all_val_predictions = [] 
-
-            for t in range(delay_prev_hour + TIME_INTERVAL, delay_curr_hour + TIME_INTERVAL, TIME_INTERVAL):
-                validation = desired_metrics_before_training.loc[t // TIME_INTERVAL]
-                all_val_labels += validation["real_labels"]
-                all_val_scores += validation["scores"]
-                all_val_predictions += validation["predictions"]
+            validation = desired_metrics_before_training.loc[[t // TIME_INTERVAL for t in range(delay_prev_hour + TIME_INTERVAL, delay_curr_hour + TIME_INTERVAL, TIME_INTERVAL)]]
+            all_val_labels = validation["real_labels"].to_numpy()
+            all_val_scores = validation["scores"].to_numpy()
+            all_val_predictions = validation["predictions"].to_numpy()
 
             val_labels = np.concatenate(all_val_labels)
             val_scores = np.concatenate(all_val_scores)
