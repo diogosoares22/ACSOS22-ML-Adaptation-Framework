@@ -6,6 +6,9 @@ def compute_TPR(TP, FN):
 def compute_TNR(TN, FP):
     return TN / (TN + FP)
 
+def compute_fraud_rate(TP, TN, FP, FN):
+    return (TP + FN) / (TP + FP + TN + FN)
+
 def get_entropy(probs): 
     return np.sum(np.multiply(probs, np.log(probs + 1e-20))  , axis=1)
 

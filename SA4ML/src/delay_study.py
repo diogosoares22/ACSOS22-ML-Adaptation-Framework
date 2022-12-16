@@ -93,11 +93,20 @@ def main():
             if delay_prev_hour < 0:
                 continue
 
-            results = dataset[(dataset["prev_retrain_hour"] == delay_prev_hour) & (dataset["curr_retrain_hour"] == delay_curr_hour)]
+            desired_metrics_before_training = metrics[delay_prev_hour // TIME_INTERVAL]
+            
+            delay_curr_before_training = desired_metrics_before_training.loc[delay_curr_hour // TIME_INTERVAL]
+            curr_before_training = desired_metrics_before_training.loc[curr_hour // TIME_INTERVAL]
+            
+            dataset.at[index,'delayed-TPR-{}'.format(delay)] = compute_TPR(delay_curr_before_training["count_tp"], delay_curr_before_training["count_fn"])
+            dataset.at[index,'delayed-TNR-{}'.format(delay)] = compute_TNR(delay_curr_before_training["count_tn"], delay_curr_before_training["count_fp"])
+            dataset.at[index,'delayed_fraud_rate-{}'.format(delay)] = compute_fraud_rate(delay_curr_before_training["count_tp"], delay_curr_before_training["count_tn"]
+                                                                                        , delay_curr_before_training["count_fp"], delay_curr_before_training["count_fn"])
 
-            dataset.at[index,'delayed-TPR-{}'.format(delay)] = results["curr-TPR"].to_list()[0]
-            dataset.at[index,'delayed-TNR-{}'.format(delay)] = results["curr-TNR"].to_list()[0]
-            dataset.at[index,'delayed_fraud_rate-{}'.format(delay)] = results["curr_fraud_rate"].to_list()[0]
+            dataset.at[index,'curr-TPR-{}'.format(delay)] = compute_TPR(curr_before_training["count_tp"], curr_before_training["count_fn"])
+            dataset.at[index,'curr-TNR-{}'.format(delay)] = compute_TNR(curr_before_training["count_tn"], curr_before_training["count_fp"])
+            dataset.at[index,'curr_fraud_rate-{}'.format(delay)] = compute_fraud_rate(curr_before_training["count_tp"], curr_before_training["count_tn"]
+                                                                                        , curr_before_training["count_fp"], curr_before_training["count_fn"])
         
         print(
             f"\n        [L] Delay {delay}"
@@ -121,6 +130,8 @@ def main():
             validation = desired_metrics_before_training.loc[delay_curr_hour // TIME_INTERVAL]
             test = desired_metrics_before_training.loc[curr_hour // TIME_INTERVAL]
 
+            # Only 1 chunk of data
+
             val_labels = validation["real_labels"]
             val_scores = validation["scores"]
             val_predictions = validation["predictions"]
@@ -141,6 +152,35 @@ def main():
             dataset.at[index,'predict-TPR-{}-without-classes'.format(delay)] = TPR
             dataset.at[index,'predict-TNR-{}-without-classes'.format(delay)] = TNR
             dataset.at[index,'predict_fraud_rate-{}-without-classes'.format(delay)] = fraud_rate
+
+            # All chunks of data between delay_prev and delay_curr
+
+            all_val_labels = []
+            all_val_scores = []
+            all_val_predictions = [] 
+
+            for t in range(delay_prev_hour + TIME_INTERVAL, delay_curr_hour + TIME_INTERVAL, TIME_INTERVAL):
+                validation = desired_metrics_before_training.loc[t // TIME_INTERVAL]
+                all_val_labels += validation["real_labels"]
+                all_val_scores += validation["scores"]
+                all_val_predictions += validation["predictions"]
+
+            val_labels = np.concatenate(all_val_labels)
+            val_scores = np.concatenate(all_val_scores)
+            val_predictions = np.concatenate(all_val_predictions)
+            val_scores = np.stack((1 - val_scores, val_scores)).T
+
+            TPR, TNR, fraud_rate = predict_confusion_matrix(val_scores, val_predictions, val_labels, test_scores, test_predictions, classes=True)
+            
+            dataset.at[index,'predict-TPR-{}-with-classes-with-all-data'.format(delay)] = TPR
+            dataset.at[index,'predict-TNR-{}-with-classes-with-all-data'.format(delay)] = TNR
+            dataset.at[index,'predict_fraud_rate-{}-with-classes-with-all-data'.format(delay)] = fraud_rate
+
+            TPR, TNR, fraud_rate = predict_confusion_matrix(val_scores, val_predictions, val_labels, test_scores, test_predictions, classes=False)
+
+            dataset.at[index,'predict-TPR-{}-without-classes-with-all-data'.format(delay)] = TPR
+            dataset.at[index,'predict-TNR-{}-without-classes-with-all-data'.format(delay)] = TNR
+            dataset.at[index,'predict_fraud_rate-{}-without-classes-with-all-data'.format(delay)] = fraud_rate
 
         print(
             f"\n        [L] Delay {delay}"
