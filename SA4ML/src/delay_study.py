@@ -180,13 +180,12 @@ def main():
         print(
             f"\n        [L] Delay {delay}"
         )
+        
+        dataset.to_pickle(DATASET_SAVE_PATH) 
 
-    print(
-        f"\n[D] Save new data"
-        )
-
-
-    dataset.to_pickle(DATASET_SAVE_PATH) 
+        print(
+            f"\n[D] Save data checkpoint"
+            ) 
 
 
 if __name__ == "__main__":
