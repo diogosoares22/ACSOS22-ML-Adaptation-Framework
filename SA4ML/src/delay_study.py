@@ -16,7 +16,7 @@ def main():
     METRICS_PATH = defs.BASE_DATASETS_PATH + "pre-generated/tmp/"
     TIME_INTERVAL = 10
     MAX_DELAY = 15
-    DELAY_PERIODS = range(1, MAX_DELAY)
+    DELAY_PERIODS = [1, 2, 4, 6, 8, 10, 12, 14, 17, 25, 34]
 
     print(
         f"\n[D] Load Results"
