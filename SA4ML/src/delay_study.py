@@ -143,15 +143,15 @@ def main():
 
             TPR, TNR, fraud_rate = predict_confusion_matrix(val_scores, val_predictions, val_labels, test_scores, test_predictions, classes=True)
             
-            dataset.at[index,'predict-TPR-{}-with-classes'.format(delay)] = TPR
-            dataset.at[index,'predict-TNR-{}-with-classes'.format(delay)] = TNR
-            dataset.at[index,'predict_fraud_rate-{}-with-classes'.format(delay)] = fraud_rate
+            dataset.at[index,'predict-TPR-{}-CBATC-small-val'.format(delay)] = TPR
+            dataset.at[index,'predict-TNR-{}-CBATC-small-val'.format(delay)] = TNR
+            dataset.at[index,'predict_fraud_rate-{}-CBATC-small-val'.format(delay)] = fraud_rate
 
             TPR, TNR, fraud_rate = predict_confusion_matrix(val_scores, val_predictions, val_labels, test_scores, test_predictions, classes=False)
 
-            dataset.at[index,'predict-TPR-{}-without-classes'.format(delay)] = TPR
-            dataset.at[index,'predict-TNR-{}-without-classes'.format(delay)] = TNR
-            dataset.at[index,'predict_fraud_rate-{}-without-classes'.format(delay)] = fraud_rate
+            dataset.at[index,'predict-TPR-{}-ATC-small-val'.format(delay)] = TPR
+            dataset.at[index,'predict-TNR-{}-ATC-small-val'.format(delay)] = TNR
+            dataset.at[index,'predict_fraud_rate-{}-ATC-small-val'.format(delay)] = fraud_rate
 
             # All chunks of data between delay_prev and delay_curr
 
@@ -167,15 +167,15 @@ def main():
 
             TPR, TNR, fraud_rate = predict_confusion_matrix(val_scores, val_predictions, val_labels, test_scores, test_predictions, classes=True)
             
-            dataset.at[index,'predict-TPR-{}-with-classes-with-all-data'.format(delay)] = TPR
-            dataset.at[index,'predict-TNR-{}-with-classes-with-all-data'.format(delay)] = TNR
-            dataset.at[index,'predict_fraud_rate-{}-with-classes-with-all-data'.format(delay)] = fraud_rate
+            dataset.at[index,'predict-TPR-{}-CBATC-big-val'.format(delay)] = TPR
+            dataset.at[index,'predict-TNR-{}-CBATC-big-val'.format(delay)] = TNR
+            dataset.at[index,'predict_fraud_rate-{}-CBATC-big-val'.format(delay)] = fraud_rate
 
             TPR, TNR, fraud_rate = predict_confusion_matrix(val_scores, val_predictions, val_labels, test_scores, test_predictions, classes=False)
 
-            dataset.at[index,'predict-TPR-{}-without-classes-with-all-data'.format(delay)] = TPR
-            dataset.at[index,'predict-TNR-{}-without-classes-with-all-data'.format(delay)] = TNR
-            dataset.at[index,'predict_fraud_rate-{}-without-classes-with-all-data'.format(delay)] = fraud_rate
+            dataset.at[index,'predict-TPR-{}-ATC-big-val'.format(delay)] = TPR
+            dataset.at[index,'predict-TNR-{}-ATC-big-val'.format(delay)] = TNR
+            dataset.at[index,'predict_fraud_rate-{}-ATC-big-val'.format(delay)] = fraud_rate
 
         print(
             f"\n        [L] Delay {delay}"
