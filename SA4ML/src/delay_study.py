@@ -15,7 +15,6 @@ def main():
     DATASET_SAVE_PATH = defs.BASE_DATASETS_PATH + "pre-generated/new/timeInterval_10-rand_sample_after_delay_metrics.pkl"
     METRICS_PATH = defs.BASE_DATASETS_PATH + "pre-generated/tmp/"
     TIME_INTERVAL = 10
-    MAX_DELAY = 15
     DELAY_PERIODS = [1, 2, 4, 6, 8, 10, 12, 14, 17, 25, 34]
 
     print(
@@ -127,10 +126,11 @@ def main():
             
             desired_metrics_before_training = metrics[delay_prev_hour // TIME_INTERVAL]
             
+            
+            # Only 1 chunk of data
+
             validation = desired_metrics_before_training.loc[delay_curr_hour // TIME_INTERVAL]
             test = desired_metrics_before_training.loc[curr_hour // TIME_INTERVAL]
-
-            # Only 1 chunk of data
 
             val_labels = validation["real_labels"]
             val_scores = validation["scores"]
