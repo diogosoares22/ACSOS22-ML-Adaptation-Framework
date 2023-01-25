@@ -75,8 +75,10 @@ class Prism:
         recall_threshold: int = 60,  # SLA agreed minimum RECALL (in %)
         fpr_sla_cost: int = 10,  # cost of violating the FPR SLA
         recall_sla_cost: int = 10,  # cost of violating the RECALL SLA
+        baseline: str = "aip",
     ):
         self.time_interval = time_interval
+        self.baseline = baseline
         self.model_type = model_type
         self.seed = seed
         self.models_dict = {
@@ -117,6 +119,8 @@ class Prism:
            for f in os.listdir(dataset_path + "pre-generated/new/"):
                if f"timeInterval_{time_interval}" in f and f.endswith(".pkl"):
                    benefits_dataset_file = dataset_path + "pre-generated/new/" + f
+
+        print(f"[D] Loaded benefits dataset file: {benefits_dataset_file}")
 
         splits, self.test_start_time = self.__prepare_splits(
             pd.read_pickle(benefits_dataset_file),
@@ -227,20 +231,65 @@ class Prism:
 
         return [train_split, val_split], test_start_time
 
-    def __init_benefits_models(self, train_split, val_split):
-
+    def select_baseline_features(self):
         # specify model features
-        benefits_model_features = [
+        baseline_model_features = [
             "amount_new_data",
             "amount_old_data",
             "total_data",
             "ratio_new_old_data",
             "retrain_delta",
-            "curr_fraud_rate",
             "scores-JSD",
-            "curr-TPR",
-            "curr-TNR",
+            # "curr_fraud_rate",
+            # "curr-TPR",
+            # "curr-TNR",
         ]
+
+        if "aip" in self.baseline:
+            features = baseline_model_features + ["curr_fraud_rate", "curr-TPR", "curr-TNR"]
+        else:
+            delay = self.baseline.split("_")[1]
+            if "delayed" in self.baseline:
+                features = baseline_model_features + [
+                    "delayed_fraud_rate-{}".format(delay), 
+                    "delayed-TPR-{}".format(delay), 
+                    "delayed-TNR-{}".format(delay),
+                ]
+
+            if "atc" in self.baseline:
+                features = baseline_model_features + [
+                    "predict_fraud_rate-{}-without-classes-with-all-data".format(delay), 
+                    "predict-TPR-{}-without-classes-with-all-data".format(delay), 
+                    "predict-TNR-{}-without-classes-with-all-data".format(delay),
+                ]
+
+            if "cbatc" in self.baseline:
+                features = baseline_model_features + [
+                    "predict_fraud_rate-{}-with-classes-with-all-data".format(delay), 
+                    "predict-TPR-{}-with-classes-with-all-data".format(delay), 
+                    "predict-TNR-{}-with-classes-with-all-data".format(delay),
+                ]
+
+            if "atc_small" in self.baseline:
+                features = baseline_model_features + [
+                    "predict_fraud_rate-{}-without-classes".format(delay), 
+                    "predict-TPR-{}-without-classes".format(delay), 
+                    "predict-TNR-{}-without-classes".format(delay),
+                ]
+
+            if "cbatc_small" in self.baseline:
+                features = baseline_model_features + [
+                    "predict_fraud_rate-{}-with-classes".format(delay), 
+                    "predict-TPR-{}-with-classes".format(delay), 
+                    "predict-TNR-{}-with-classes".format(delay),
+                ]
+
+        return features
+
+    def __init_benefits_models(self, train_split, val_split):
+
+        benefits_model_features = self.select_baseline_features()        
+
 
         if "delta" in self.model_type:
             target_TPR = "delta-TPR"
