@@ -17,7 +17,7 @@ from time_series import (
 )
 from utils import add_to_dict, compute_feature_jsd, exec_bash_cmd, get_dataset_path
 from utils_IEEE_CIS import add_hour_day_month_ieee_cis, load_ieee_cis_train_set
-
+from predict_utils import estimate_confusion_matrix
 
 def exec_prism(args):
     cmd = f"{defs.PRISM_PATH}{defs.PRISM_EXEC_FILE} {args} retrain > {defs.PRISM_PATH}retrain_output_log.txt"
@@ -54,6 +54,18 @@ def get_prism_utils(_dir):
 
     return nop_util, retrain_util
 
+
+def rename_columns(col):
+    if "delta" not in col and "avg" not in col:
+        if "TPR" in col:
+            return "curr-TPR"
+        if "TNR" in col:
+            return "curr-TNR"
+        if "fraud_rate" in col:
+            return "curr_fraud_rate"
+        
+    return col
+    
 
 class Prism:
     # pylint: disable=too-many-instance-attributes
@@ -229,6 +241,23 @@ class Prism:
             lambda x: x if x < sat_value * max_val else sat_value * max_val
         )
 
+        # remove NaN rows of delayed metrics
+        if "aip" not in self.baseline:
+            delay = self.baseline.split("_")[-1]
+            cols = []
+            for feature in ["-TPR", "-TNR", "_fraud_rate"]:        
+                cols += [
+                    "curr{}-{}".format(feature, delay), 
+                    "delayed{}-{}".format(feature, delay),
+                    "predict{}-{}-without-classes".format(feature, delay),
+                    "predict{}-{}-with-classes".format(feature, delay),
+                    "predict{}-{}-without-classes-with-all-data".format(feature, delay), 
+                    "predict{}-{}-with-classes-with-all-data".format(feature, delay)
+                ]
+
+            train_split = train_split.dropna(subset=cols)
+            val_split = val_split.dropna(subset=cols)
+
         return [train_split, val_split], test_start_time
 
     def select_baseline_features(self):
@@ -245,10 +274,12 @@ class Prism:
             # "curr-TNR",
         ]
 
+
         if "aip" in self.baseline:
             features = baseline_model_features + ["curr_fraud_rate", "curr-TPR", "curr-TNR"]
         else:
-            delay = self.baseline.split("_")[1]
+            delay = self.baseline.split("_")[-1]
+            print(f"[D] Considering feature delay of {delay}")
             if "delayed" in self.baseline:
                 features = baseline_model_features + [
                     "delayed_fraud_rate-{}".format(delay), 
@@ -288,8 +319,8 @@ class Prism:
 
     def __init_benefits_models(self, train_split, val_split):
 
-        benefits_model_features = self.select_baseline_features()        
-
+        features = self.select_baseline_features()        
+        print(f"[D] Using features\n\t{features}")
 
         if "delta" in self.model_type:
             target_TPR = "delta-TPR"
@@ -301,6 +332,28 @@ class Prism:
             target_TNR = "avg-TNR-retrain"
             target_TPR_nop = "avg-TPR-no_retrain"
             target_TNR_nop = "avg-TNR-no_retrain"
+
+        if "aip" not in self.baseline:
+            delay = self.baseline.split("_")[-1]
+            target_TPR = target_TPR + "-" + str(delay)
+            target_TNR = target_TNR + "-" + str(delay)
+            target_TPR_nop = target_TPR_nop + "-" + str(delay)
+            target_TNR_nop = target_TNR_nop + "-" + str(delay)
+
+        # select only necessary columns according to the current baseline
+        cols = features + [target_TNR, target_TPR, target_TNR_nop, target_TPR_nop]
+        train_split = train_split.drop(columns=[col for col in train_split if col not in cols])
+        val_split = val_split.drop(columns=[col for col in val_split if col not in cols])
+
+        # rename features so that feature names are the same regardless of the baseline
+        benefits_model_features = []
+        for feature in features:
+            benefits_model_features.append(rename_columns(feature))
+
+        train_split = train_split.rename(columns=rename_columns)
+        val_split = val_split.rename(columns=rename_columns)
+    
+        print(f"[D] Features after renaming:\n\t{benefits_model_features}")
 
         print(f"[D] Training TPR and TNR {self.model_type} models")
         # train models to predict delta-TP and delta-TN
@@ -409,10 +462,6 @@ class Prism:
             (samples_dict["_time"] - results_dict["retrain_hour"][-1])
         )
         print("retrain-delta: " + str(features_dict["retrain_delta"]))
-        features_dict["curr_fraud_rate"] = (
-            results_dict["num_fraud_transactions"][-1]
-            / results_dict["num_transactions"][-1]
-        )
 
         scores_JSD_dict = {}
         compute_feature_jsd(
@@ -430,6 +479,11 @@ class Prism:
         )
 
         features_dict["scores-JSD"] = scores_JSD_dict["scores-JSD"][0]
+
+        features_dict["curr_fraud_rate"] = (
+            results_dict["num_fraud_transactions"][-1]
+            / results_dict["num_transactions"][-1]
+        )
 
         return features_dict
 
@@ -458,7 +512,7 @@ class Prism:
             add_to_dict(results_dict, col, prism_dict["curr_" + col.split("_")[3]])
 
         features = pd.DataFrame(features_dict, index=[0])
-        print(features)
+        
         add_to_dict(results_dict, "benefits_model_features", features_dict)
 
         return features
@@ -544,6 +598,13 @@ class Prism:
 
     def get_benefits_prediction(self, features, prism_dict, results_dict):
 
+        # initialize dict of required values
+        # for rate, stat in zip(["TPR", "TNR"], ["", "std", "5", "50", "95"]):
+        #     if stat:
+        #         prism_dict[f"new_{rate}_noRetrain_{stat}"] = 0
+        #     else:
+        #         prism_dict[f"new_{rate}_noRetrain"] = 0
+        
         prism_dict["new_TPR_noRetrain"] = 0
         prism_dict["new_TNR_noRetrain"] = 0
         prism_dict["new_TPR_noRetrain_std"] = 0
@@ -556,7 +617,10 @@ class Prism:
         prism_dict["new_TNR_noRetrain_5"] = 0
         prism_dict["new_TNR_noRetrain_50"] = 0
         prism_dict["new_TNR_noRetrain_95"] = 0
+        
+        print(f"PRISM DICT:\n\t{prism_dict}")
 
+        # actually get model predictions
         self.__predict_benefits(features, prism_dict, results_dict)
 
         for key, value in prism_dict.items():
@@ -677,21 +741,42 @@ class Prism:
         prism_dict["curr_tnr"] = 0
         prism_dict["curr_fnr"] = 0
         prism_dict["curr_fpr"] = 0
+
         if len(results_dict["real_labels"]) > 0:
-            curr_tn, curr_fp, curr_fn, curr_tp = confusion_matrix(  # tn, fp, fn, tp
-                results_dict["real_labels"][-1],
-                results_dict["predictions"][-1],
-            ).ravel()
+            delay = 0
+            if "aip" not in self.baseline:
+                delay = int(self.baseline.split("_")[-1])
 
-            prism_dict["curr_tpr"] = (curr_tp) / (curr_tp + curr_fn)
-            prism_dict["curr_tnr"] = (curr_tn) / (curr_tn + curr_fp)
-            prism_dict["curr_fnr"] = (curr_fn) / (curr_tp + curr_fn)
-            prism_dict["curr_fpr"] = (curr_fp) / (curr_tn + curr_fp)
+            if "atc" in self.baseline:
+                curr_tpr, curr_tnr, curr_fnr, curr_fpr, fraud_rate = estimate_confusion_matrix(
+                    method=self.baseline,
+                    retrain_delta=int((samples_dict["_time"] - results_dict["retrain_hour"][-1])) // self.time_interval,
+                    metrics=results_dict,
+                )
+            else:
+                fraud_rate = -1
+                curr_tn, curr_fp, curr_fn, curr_tp = confusion_matrix(  # tn, fp, fn, tp
+                    results_dict["real_labels"][-(1+delay)],
+                    results_dict["predictions"][-(1+delay)],
+                ).ravel()
 
-        # compute input features for benefits models
+                curr_tpr = (curr_tp) / (curr_tp + curr_fn)
+                curr_tnr = (curr_tn) / (curr_tn + curr_fp)
+                curr_fnr = (curr_fn) / (curr_tp + curr_fn)
+                curr_fpr = (curr_fp) / (curr_tn + curr_fp)    
+
+            prism_dict["curr_tpr"] = curr_tpr
+            prism_dict["curr_tnr"] = curr_tnr
+            prism_dict["curr_fnr"] = curr_fnr
+            prism_dict["curr_fpr"] = curr_fpr
+
+        # compute input features for benefits prediction models
         features = self.get_features_for_benefits_prediction(
             prism_dict, results_dict, samples_dict
         )
+        print(f"[D] Features for benefits prediction:\n\t{features}")
+        if fraud_rate != -1:
+            features['curr_fraud_rate'] = fraud_rate
 
         # predict benefits of retrain in terms of delta (increase/decrease) in each cell of the confusion matrix
         self.get_benefits_prediction(features, prism_dict, results_dict)

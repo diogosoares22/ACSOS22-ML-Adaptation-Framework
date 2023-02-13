@@ -21,16 +21,20 @@ from utils_IEEE_CIS import (
 
 
 def store_results(
-    metrics, times, metrics_dict, times_dict, idx, run_params_dict, sla_violations=None
+    metrics, times, metrics_dict, times_dict, idx, run_params_dict, tmp_dict, sla_violations=None
 ):
     for key, value in metrics.items():
         if "total_cost" in key:
             continue
-        if key in metrics_dict:
+        if "retrain_occurred" in key and tmp_dict is not None:
+            metrics_dict[key].append(tmp_dict["retrain_occurred"])
+        elif key in metrics_dict:
             metrics_dict[key].append(value[idx])
-
+        
+    if tmp_dict is not None:
+        print(f"time {idx}:   retrain={metrics['retrain_occurred'][idx]}   retrain-tmp-dict={tmp_dict['retrain_occurred']}")
     if sla_violations is None:
-        sla_violations = sla_violated(metrics, idx, run_params_dict)
+        sla_violations = sla_violated(metrics, idx, run_params_dict, tmp_dict)
     metrics_dict["total_sla_violations"].append(sla_violations)
     metrics_dict["total_cost"].append(sla_violations * run_params_dict["slaCost"])
 
@@ -44,7 +48,7 @@ def store_results(
 
 def count_sla_violations(recall, fpr, run_params_dict):
 
-    print(f"[D] recall: {recall}   fpr: {fpr}")
+    # print(f"[D] recall: {recall}   fpr: {fpr}")
 
     count = 0
     if fpr > run_params_dict["fprT"]:
@@ -56,11 +60,7 @@ def count_sla_violations(recall, fpr, run_params_dict):
 
 
 def sla_violated_benefits_model(
-    _time,
-    metrics,
-    tmp_dict,
-    prism,
-    run_params_dict,
+    _time, metrics, tmp_dict, prism, run_params_dict,
 ):
 
     tmp_dict["_time"] = _time * tmp_dict["time_interval"]
@@ -98,7 +98,7 @@ def sla_violated_benefits_model(
     return sla_violations_nop, sla_violations_retrain
 
 
-def sla_violated(model, idx, run_params_dict):
+def sla_violated(model, idx, run_params_dict, tmp_dict):
 
     tn, fp, fn, tp = confusion_matrix(  # tn, fp, fn, tp
         model["real_labels"][idx],
@@ -107,6 +107,9 @@ def sla_violated(model, idx, run_params_dict):
 
     recall = (tp / (tp + fn)) * 100
     fpr = (fp / (tn + fp)) * 100
+
+    if tmp_dict is not None:
+        print(f"time {idx}: recall={recall}   fpr={fpr}   last_retrain={tmp_dict['last_retrain']}   model_name={tmp_dict['curr_model_name']}   ({run_params_dict['baseline']})")
 
     return count_sla_violations(recall, fpr, run_params_dict)
 
@@ -154,7 +157,7 @@ def check_retrain(
         if run_params_dict["randomGenerator"].uniform(0, 1) > 0.5:
             tmp_dict["retrain_occurred"] = True
     elif "reactive" in run_params_dict["baseline"]:
-        if sla_violated(curr_model_metrics, _time - 1, run_params_dict) > 0:
+        if sla_violated(curr_model_metrics, _time - 1, run_params_dict, tmp_dict) > 0:
             tmp_dict["retrain_occurred"] = True
     elif run_params_dict["askPrism"] and (
         "delta" in run_params_dict["baseline"] or "abs" in run_params_dict["baseline"]
@@ -171,26 +174,38 @@ def check_retrain(
         aux_metrics["curr_timestamp"] = [tmp_dict["curr_timestamp"]]
         aux_metrics["retrain_timestamp"] = [tmp_dict["last_retrain_timestamp"]]
 
-        time_overhead = time.time()
+        time_overhead = time.time()   
         tmp_dict["retrain_occurred"] = prism.ask_prism(
             aux_metrics,
             aux_tmp_dict,
         )
         metrics_dict["overall_time_overhead"].append(time.time() - time_overhead)
+        print("#"*95 + "   PRISM - DECISION   " + "#" * 95)
         print("[D] Going to retrain: " + str(tmp_dict["retrain_occurred"]).upper())
+        print("#"*212)
     else:
+        # check how many SLAs are violated 
+        # in the following time interval
+        # if the model is not retrained
         tmp_dict["sla_violations"] = sla_violated(
-            curr_model_metrics, _time, run_params_dict
+            curr_model_metrics, _time, run_params_dict, tmp_dict
         )
 
         if "optimum" in run_params_dict["baseline"]:
+            # because the optimum has access to future knowledge
+            # we peak at what happens in the following time interval
+            # to see how many SLAs are violated if the model is retrained
             sla_violations_retrain = sla_violated(
-                retrain_model_metrics, _time, run_params_dict
+                retrain_model_metrics, _time, run_params_dict, tmp_dict
             )
+        # if the baseline is our framework, we have to estimate how many
+        # SLAs will be violated in the following time interval
         elif (
             "delta" in run_params_dict["baseline"]
             or "abs" in run_params_dict["baseline"]
         ):
+            # predict the number of SLA violations both when the model
+            # is retrained and when it is not
             if run_params_dict["nopModels"] is not None:
                 (
                     tmp_dict["sla_violations"],
@@ -198,6 +213,8 @@ def check_retrain(
                 ) = sla_violated_benefits_model(
                     _time, metrics_dict, tmp_dict, prism, run_params_dict
                 )
+            # only predict the number of SLA violations
+            # when the model is retrained
             else:
                 _, sla_violations_retrain = sla_violated_benefits_model(
                     _time,
@@ -207,8 +224,8 @@ def check_retrain(
                     run_params_dict,
                 )
 
-        if tmp_dict["sla_violations"] > 0:  # sla violated if we don’t retrain
-
+        # at least one SLA is violated if we don’t retrain
+        if tmp_dict["sla_violations"] > 0:
             print(
                 "[D] violations-NOP="
                 + str(tmp_dict["sla_violations"])
@@ -248,6 +265,7 @@ def test(
     _time = test_start_time
 
     tmp_dict = {
+        "curr_model_name": f"timeInterval_{time_interval}-retrainPeriod_{int(test_start_time)}",
         "last_retrain": _time,
         "len_train": curr_model_times["amount_old_data"].to_numpy()[0],
         "_time": _time,
@@ -303,6 +321,7 @@ def test(
             times_dict,
             _time,
             run_params_dict,
+            tmp_dict
         )
 
         tmp_dict["curr_new_samples"] += curr_model_metrics[
@@ -323,12 +342,14 @@ def test(
 
         tmp_dict["_time"] = _time
 
-        retrain_model_metrics = datasets_metrics[
-            f"timeInterval_{time_interval}-retrainPeriod_{_time*time_interval}"
-        ]
-        retrain_model_times = datasets_times[
-            f"timeInterval_{time_interval}-retrainPeriod_{_time*time_interval}"
-        ]
+        retrain_time = _time
+        if "delta" in run_params_dict["baseline"] and "aip" not in run_params_dict["baseline"]:
+            delay = run_params_dict["baseline"].split("_")[-1]
+            retrain_time = _time-int(delay)
+
+        retrain_model_name = f"timeInterval_{time_interval}-retrainPeriod_{retrain_time*time_interval}"
+        retrain_model_metrics = datasets_metrics[retrain_model_name]
+        retrain_model_times = datasets_times[retrain_model_name]
 
         if "periodic" in baseline:
             tmp_dict["retrain_occurred"] = True
@@ -344,6 +365,7 @@ def test(
                 tmp_dict=tmp_dict,
                 prism=prism,
             )
+            print(f"retrain occurred: {tmp_dict['retrain_occurred']}")
 
         if tmp_dict["retrain_occurred"]:
             if run_params_dict["retrainLatency"] != 0:
@@ -356,6 +378,7 @@ def test(
             else:
                 curr_model_metrics = retrain_model_metrics
             curr_model_times = retrain_model_times
+            tmp_dict["curr_model_name"] = retrain_model_name
             tmp_dict["curr_timestamp"] = pd.Timestamp(
                 curr_model_times["retrain_timestamp"].to_numpy()[-1]
             )
@@ -384,7 +407,7 @@ def init_prism(run_params_dict: dict):
         time_interval=run_params_dict["timeInterval"],
         model_type=run_params_dict["baseline"].split("_", maxsplit=1)[0],
         dataset_name=defs.DATASET_NAME_TEST,
-        seed=1,
+        seed=run_params_dict["seed"],
         sat_value=run_params_dict["satValue"],
         nop_models=run_params_dict["nopModels"],
         retrain_cost=run_params_dict["retrainCost"],  # cost of the retrain tactic
@@ -395,6 +418,7 @@ def init_prism(run_params_dict: dict):
         recall_threshold=run_params_dict["recallT"],  # SLA agreed minimum RECALL (in %)
         fpr_sla_cost=run_params_dict["slaCost"],  # cost of violating the FPR SLA
         recall_sla_cost=run_params_dict["slaCost"],  # cost of violating the RECALL SLA
+        baseline=run_params_dict["baseline"],
     )
 
     return prism
@@ -467,6 +491,7 @@ def setup_and_test(datasets_metrics, datasets_times, run_params_dict, path):
                 times_dict,
                 i // time_interval,
                 run_params_dict,
+                None
             )
             metrics_dict["benefits_model_features"].append(-1)
             metrics_dict["benefits_model_predictions"].append(-1)
@@ -516,7 +541,15 @@ def setup_and_test(datasets_metrics, datasets_times, run_params_dict, path):
     return pd.DataFrame(results_dict)
 
 
-def main(use_pgf: False):
+def main(
+    use_pgf: False,
+    fpr_thresholds: list = exp_settings.FPR_T,
+    recall_thresholds: list = exp_settings.RECALL_T,
+    sla_costs: list = exp_settings.SLA_COSTS,
+    retrain_costs: list = exp_settings.RETRAIN_COSTS,
+    retrain_latencies: list = exp_settings.RETRAIN_LATENCIES,
+    baselines: list = exp_settings.BASELINES,
+):
     # pylint: disable=too-many-locals
     test_path = get_dataset_path(defs.DATASET_NAME_TEST)
     path = test_path
@@ -555,12 +588,12 @@ def main(use_pgf: False):
             prod = itertools.product(
                 defs.SAT_VALUES,
                 defs.USE_NOP_MODELS,
-                exp_settings.FPR_T,
-                exp_settings.RECALL_T,
-                exp_settings.SLA_COSTS,
-                exp_settings.RETRAIN_COSTS,
-                exp_settings.RETRAIN_LATENCIES,
-                exp_settings.BASELINES,
+                fpr_thresholds,
+                recall_thresholds,
+                sla_costs,
+                retrain_costs,
+                retrain_latencies,
+                baselines,
             )
             for (
                 sat_val,
@@ -577,11 +610,11 @@ def main(use_pgf: False):
                 run_params_dict = {
                     "timeInterval": time_interval,
                     "baseline": baseline,
-                    "fprT": fpr_t,
-                    "recallT": recall_t,
-                    "retrainCost": retrain_cost,
-                    "retrainLatency": retrain_latency,
-                    "slaCost": sla_cost,
+                    "fprT": int(fpr_t),
+                    "recallT": int(recall_t),
+                    "retrainCost": int(retrain_cost),
+                    "retrainLatency": int(retrain_latency),
+                    "slaCost": int(sla_cost),
                     "satValue": sat_val,
                     "nopModels": nop_models,
                     "askPrism": defs.ASK_PRISM,
@@ -603,10 +636,61 @@ if __name__ == "__main__":
     use_pre_generated_files = False
     parser = argparse.ArgumentParser()
     parser.add_argument("--use-pgf", help="use pre-generated files", action="store_true")
+
+    parser.add_argument(
+        '--fpr_thresholds', 
+        nargs='+', 
+        help=f'FPR thresholds to consider for the experiments.\n\tDefaul={exp_settings.FPR_T}', 
+        required=False
+    )
+
+    parser.add_argument(
+        '--recall_thresholds', 
+        nargs='+', 
+        help=f'Recall thresholds to consider for the experiments.\n\tDefaul={exp_settings.RECALL_T}', 
+        required=False
+    )
+
+    parser.add_argument(
+        '--sla_costs', 
+        nargs='+', 
+        help=f'Costs of each SLA violation.\n\tDefaul={exp_settings.SLA_COSTS}', 
+        required=False
+    )
+
+    parser.add_argument(
+        '--retrain_costs', 
+        nargs='+', 
+        help=f'Cost of each retrain.\n\tDefaul={exp_settings.RETRAIN_COSTS}', 
+        required=False
+    )
+
+    parser.add_argument(
+        '--retrain_latencies', 
+        nargs='+', 
+        help=f'Latency of each retrain.\n\tDefaul={exp_settings.RETRAIN_LATENCIES}', 
+        required=False
+    )
+
+    parser.add_argument(
+        '--baselines', 
+        nargs='+', 
+        help=f'List of baselines with which to test the framework.\n\tDefaul={exp_settings.BASELINES}', 
+        required=False
+    )
+
     args = parser.parse_args()
 
     if args.use_pgf:
         print("[D] Using pre-generated files")
         use_pre_generated_files = True
 
-    main(use_pre_generated_files)
+    main(
+        use_pre_generated_files,
+        fpr_thresholds = exp_settings.FPR_T if not args.fpr_thresholds else args.fpr_thresholds,
+        recall_thresholds = exp_settings.RECALL_T if not args.recall_thresholds else args.recall_thresholds,
+        sla_costs = exp_settings.SLA_COSTS if not args.sla_costs else args.sla_costs,
+        retrain_costs = exp_settings.RETRAIN_COSTS if not args.retrain_costs else args.retrain_costs,
+        retrain_latencies = exp_settings.RETRAIN_LATENCIES if not args.retrain_latencies else args.retrain_latencies,
+        baselines = exp_settings.BASELINES if not args.baselines else args.baselines,
+    )

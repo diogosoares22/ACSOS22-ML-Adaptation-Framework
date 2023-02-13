@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 def compute_TPR(TP, FN):
     return TP / (TP + FN)
@@ -119,8 +120,50 @@ def predict_confusion_matrix(val_pred_probs, val_predictions, val_labels, test_p
     mask = mask.astype(bool)
     test_predictions = test_predictions.astype(bool)
 
-    TPR, TNR = get_ATC_tpr(mask, test_predictions), get_ATC_tnr(mask, test_predictions)
+    tpr = get_ATC_tpr(mask, test_predictions)
+    tnr = get_ATC_tnr(mask, test_predictions)
 
     fraud_rate = get_ATC_fraud_rate(mask, test_predictions)
 
-    return TPR, TNR, fraud_rate
+    return tpr, tnr, fraud_rate
+
+def estimate_confusion_matrix(method: str, retrain_delta: int, metrics: dict):
+    
+    delay = int(method.split("_")[-1])
+
+    # metrics of the current time interval
+    test_scores = metrics["scores"][-1]
+    test_predictions = metrics["predictions"][-1]
+    test_scores = np.stack((1 - test_scores, test_scores)).T
+
+    # Only 1 chunk of data ==> small validation set
+    if "small" in method:
+        # metrics of time interval "current time instant - delay"
+        val_labels = metrics["real_labels"][-(1 + delay)]
+        val_scores = metrics["scores"][-(1 + delay)]
+        val_predictions = metrics["predictions"][-(1 + delay)]
+        val_scores = np.stack((1 - val_scores, val_scores)).T
+    
+    # All chunks of data between delay_prev and delay_curr ==> big validation set
+    else:
+        # metrics from  "last retrain time - delay" to "current time instant - delay"
+        print(f"len(metrics)={len(metrics['real_labels'])}   accessing index {-(1 + delay + retrain_delta)} to {-(1 + delay)}")
+        all_val_labels = metrics["real_labels"][-(1 + delay + retrain_delta):-(1 + delay)]
+        all_val_scores = metrics["scores"][-(1 + delay + retrain_delta):-(1 + delay)]
+        all_val_predictions = metrics["predictions"][-(1 + delay + retrain_delta):-(1 + delay)]
+
+        print(all_val_labels)
+
+        val_labels = np.concatenate(all_val_labels)
+        print(val_labels)
+        val_scores = np.concatenate(all_val_scores)
+        val_predictions = np.concatenate(all_val_predictions)
+        val_scores = np.stack((1 - val_scores, val_scores)).T
+
+    classes = False
+    if "cbatc" in method:
+        classes = True
+        
+    tpr, tnr, fraud_rate = predict_confusion_matrix(val_scores, val_predictions, val_labels, test_scores, test_predictions, classes=classes)
+
+    return tpr, tnr, (1-tpr), (1-tnr), fraud_rate
