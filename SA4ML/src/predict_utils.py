@@ -13,6 +13,18 @@ def compute_fraud_rate(TP, TN, FP, FN):
 def get_entropy(probs): 
     return np.sum(np.multiply(probs, np.log(probs + 1e-20))  , axis=1)
 
+def get_general_entropy(probs, predictions):
+
+    entropy = get_entropy(probs)
+
+    expected_predictions = np.argmax(probs, axis=-1)
+
+    for i in range(len(predictions)):
+        if expected_predictions[i] != predictions[i]:
+            entropy[i] = (entropy[i]*(-1)) - 2
+
+    return entropy 
+
 def get_max_conf(probs):
     return np.max(probs, axis=-1)
 
@@ -72,9 +84,9 @@ def get_ATC_fraud_rate(mask, predictions):
 def get_correct_predictions_mask_with_classes(val_pred_probs, val_preds, val_labels, test_pred_probs, test_preds):
     no_classes = val_pred_probs.shape[1]
     
-    val_scores = get_entropy(val_pred_probs)
+    val_scores = get_general_entropy(val_pred_probs, val_preds)
 
-    test_scores = get_entropy(test_pred_probs)
+    test_scores = get_general_entropy(test_pred_probs, test_preds)
 
     mask = np.zeros(test_scores.shape)
 
@@ -98,11 +110,11 @@ def get_correct_predictions_mask_with_classes(val_pred_probs, val_preds, val_lab
 
     return mask
 
-def get_correct_predictions_mask_without_classes(val_pred_probs, val_preds, val_labels, test_pred_probs):
+def get_correct_predictions_mask_without_classes(val_pred_probs, val_preds, val_labels, test_pred_probs, test_preds):
 
-    val_scores = get_entropy(val_pred_probs)
+    val_scores = get_general_entropy(val_pred_probs, val_preds)
 
-    test_scores = get_entropy(test_pred_probs)
+    test_scores = get_general_entropy(test_pred_probs, test_preds)
 
     _, ATC_threshold = find_ATC_threshold(val_scores, val_labels == val_preds)
 
@@ -115,7 +127,7 @@ def predict_confusion_matrix(val_pred_probs, val_predictions, val_labels, test_p
     if classes:
         mask = get_correct_predictions_mask_with_classes(val_pred_probs, val_predictions, val_labels, test_pred_probs, test_predictions)
     else:
-        mask = get_correct_predictions_mask_without_classes(val_pred_probs, val_predictions, val_labels, test_pred_probs)
+        mask = get_correct_predictions_mask_without_classes(val_pred_probs, val_predictions, val_labels, test_pred_probs, test_predictions)
 
     mask = mask.astype(bool)
     test_predictions = test_predictions.astype(bool)
