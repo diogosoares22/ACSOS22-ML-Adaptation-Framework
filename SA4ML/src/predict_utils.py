@@ -19,9 +19,9 @@ def get_general_entropy(probs, predictions):
 
     expected_predictions = np.argmax(probs, axis=-1)
 
-    for i in range(len(predictions)):
-        if expected_predictions[i] != predictions[i]:
-            entropy[i] = (entropy[i]*(-1)) - 2
+    inverted_indices = (expected_predictions != predictions)
+
+    entropy[inverted_indices] = entropy[inverted_indices] * (-1) - 2
 
     return entropy 
 
