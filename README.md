@@ -1,17 +1,18 @@
-# A Framework for Adapting Machine Learning Components
+# Self-Adapting Machine Learning-based Systems via a Probabilistic Model Checking Framework
 
-This document details how to set-up the environment for reproducing the results from the paper **A Framework for Adapting Machine Learning Components**, accepted at ACSOS 2022.
+This document details how to set-up the environment for reproducing the results from the paper **Self-Adapting Machine Learning-based Systems via a Probabilistic Model Checking Framework**, published in TAAS 2024.
 
 ## Citing
 
 If you use our work, please cite:
 
 ```
-@inproceedings{casimiro2022acsos,
-  title={A Framework for Adapting Machine Learning Components},
-  author={Casimiro, Maria and Romano, Paolo and Garlan, David and Rodrigues, Luis},
-  year={2022},
-  booktitle={Proceedings of the 2022 IEEE International Conference on Autonomic Computing and Self-Organizing Systems (ACSOS)}
+@article{casimiro2024self,
+  title={Self-Adapting Machine Learning-based Systems via a Probabilistic Model Checking Framework},
+  author={Casimiro, Maria and Soares, Diogo and Garlan, David and Rodrigues, Lu{\'\i}s and Romano, Paolo},
+  journal={ACM Transactions on Autonomous and Adaptive Systems},
+  year={2024},
+  publisher={ACM New York, NY}
 }
 ```
 
@@ -258,7 +259,8 @@ python3 generate_retrain_dataset.py
 time python3 generate_retrain_dataset.py
 ```
 
-This processes the retrain files obtained previously and computes metrics such as variations in the distributions of thescores of the fraud detection model. Generating this dataset is also computationally expensive (also ≈12 hours), however both this and the previous step should be performed only once. The generated dataset is saved to `~/SA4ML/datasets/ieee-fraud-detection/new/`
+This processes the retrain files obtained previously and computes metrics such as variations in the distributions of the
+scores of the fraud detection model. Generating this dataset is also computationally expensive (also ≈12 hours), however both this and the previous step should be performed only once. The generated dataset is saved to `~/SA4ML/datasets/ieee-fraud-detection/new/`
 
 
 ### 3. Re-generating baselines and adaptive framework results<a name="re-generate-results"></a>
